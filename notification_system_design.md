@@ -136,3 +136,26 @@ To prevent the cache from serving stale, outdated data when important new notifi
 
 1. **Passive Eviction via TTL:** If no new data is posted, the cache naturally expires after 5 minutes, pulling fresh updates smoothly on the next query trip.
 2. **Active Explicit Invalidation:** The exact millisecond an administrator posts a ne
+
+---
+
+## Stage 5: Distributed Message Queues & Architectural Fault Tolerance
+
+### 1. Legacy Loop Vulnerabilities
+The legacy synchronous execution loop (`notify_all`) introduces critical real-world bottlenecks:
+* **Blocking the Main Thread:** Handling external network requests inside a raw loop freezes the server, making the app unresponsive to other users.
+* **Lack of Fault Recovery:** If an external email provider fails mid-way, the entire process crashes, leaving thousands of users without alerts.
+
+### 2. Modern Decoupled Solution: Asynchronous Queues
+To handle 50,000 students safely, we separate the request from the work using a background **Message Queue**. The main server accepts the task instantly, and background workers process the emails at a controlled, safe speed.
+
+### 3. High-Performance Pseudocode Setup
+```javascript
+// Server immediately accepts the job and frees up connections
+async function handleNotifyAllRequest(req, res) {
+  await notificationQueue.add('broadcast_job', { 
+    studentIds: req.body.studentIds, 
+    message: req.body.message 
+  });
+  return res.status(202).json({ success: true, message: "Queued successfully." });
+}
