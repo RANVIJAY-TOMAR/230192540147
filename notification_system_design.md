@@ -91,3 +91,48 @@ The initial legacy query provided for evaluation is:
 SELECT * FROM notifications 
 WHERE studentID = 1042 AND isRead = false 
 ORDER BY createdAt DESC;
+
+---
+
+## Stage 4: High-Concurrency Architectural Mitigation Strategy
+
+### 1. Scalability Bottleneck Analysis
+When 50,000 students hit the notification API concurrently on every single page load, the system experiences a classical **Thundering Herd Problem**. Every page navigation forces a round-trip query to the persistent primary database cluster. 
+
+This causes immediate architectural failure modes:
+* **Connection Pool Exhaustion:** The database runs out of available socket descriptors to handle incoming concurrent TCP requests, causing connection timeouts (`ECONNREFUSED`).
+* **CPU and Disk IOPS Spikes:** Processing the same sorting and filtration steps millions of times sequentially pushes CPU usage to 100% and saturates the Storage Area Network (SAN) read input/output bandwidth.
+
+---
+
+### 2. Proposed System Design Intervention: Distributed In-Memory Caching
+
+To shield our persistent PostgreSQL database from this brute-force traffic, we must decouple read operations from the core disk storage layer by implementing a high-throughput, in-memory caching tier using **Redis**.
+
+Rather than querying the core database every single time a student reloads their dashboard, the application server checks a lightning-fast memory cache first.
+[ 50,000 Concurrent Students ]
+                 │
+                 ▼
+       [ API Gateway / Express ]
+                 │
+      ┌──────────┴──────────┐
+      │ (Cache Hit)         │ (Cache Miss)
+      ▼                     ▼
+ [ Redis Cache ]     [ PostgreSQL DB ]
+ (Sub-millisecond)          │
+      ▲                     │ (Writes back to update cache)
+      └─────────────────────┘
+
+#### Cache Key Stratification Policy:
+* **Key Format Structure:** `student:cache:{student_id}:notifications`
+* **Data Payload Strategy:** Stringified JSON arrays containing the optimized list of the student's top unread notifications.
+* **TTL (Time-To-Live) Threshold:** Configured with a sliding window expiration of **300 seconds (5 minutes)**. This guarantees that memory is auto-recycled frequently, and even if a student opens multiple browser tabs rapidly, the database is hit at most once every 5 minutes per user.
+
+---
+
+### 3. Asymmetric Cache Invalidation Framework
+
+To prevent the cache from serving stale, outdated data when important new notifications (like an active Placement drive) are released, an asymmetric **Cache-Aside + Write-Through write strategy** is applied:
+
+1. **Passive Eviction via TTL:** If no new data is posted, the cache naturally expires after 5 minutes, pulling fresh updates smoothly on the next query trip.
+2. **Active Explicit Invalidation:** The exact millisecond an administrator posts a ne
