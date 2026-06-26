@@ -159,3 +159,22 @@ async function handleNotifyAllRequest(req, res) {
   });
   return res.status(202).json({ success: true, message: "Queued successfully." });
 }
+---
+
+## Stage 6: Priority Inbox Real-Time Sorting Algorithm
+
+### 1. Approach and Solution Design
+The Priority Inbox drops standard sequential database reads in favor of a dynamic linear-weighted array parsing pipeline. When data hits the system gateway from the protected microservice route, it undergoes an extraction process that standardizes the field names and applies custom weight coefficients:
+* **Placement Alerts:** Given top weight classification (`3`) due to critical deadline dependencies.
+* **Academic Result Dispatches:** Given intermediate classification (`2`).
+* **General Events:** Given standard classification (`1`).
+
+### 2. Computational Multi-Key Sorting Mechanics
+Sorting uses a compound comparator pattern. The JavaScript V8 sorting architecture executes structural sorting routines under $O(K \log K)$ runtime footprints (where $K$ represents the total capacity bounds of elements retrieved from the upstream system). 
+
+If category weights are unequal, the higher weight jumps straight to the top. If weights match precisely, the tie-breaker checks the Unix timestamp coordinates, putting the newest notifications first.
+
+### 3. Scalable Memory Management Interventions
+To maintain a high-performance profile even as endless notifications flow in, we restrict data usage using short-circuit array bounds:
+* **In-Memory Streaming Buffers:** Instead of running unbounded array copies, incoming JSON streams are piped straight through a parsing filter.
+* **Truncated Array Slicing:** Applying `.slice(0, limit)` early prevents bloated data transfers to the student's browser dashboard, saving memory bandwidth across all systems.
